@@ -1,0 +1,26 @@
+version: '2'
+
+services:
+
+  tensorflow:
+    build: .
+    entrypoint: ["/usr/bin/python3", "char_rnn.py"]
+    environment:
+      - "TENSORBOARD_LOGS_DIR=/tb_logs"
+      - "MODELS_DIR=/models/"
+    volumes:
+      - tb-logs-volume:/tb_logs/
+      - ./models/:/models/
+  tensorboard:
+    build: .
+    ports:
+      - "80:6006"
+      - "8080:8080"
+    expose:
+      - 8080
+    volumes:
+      - tb-logs-volume:/tb_logs/
+    entrypoint: ["tensorboard",  "--logdir=/tb_logs/", "--host=0.0.0.0", "--port=6006"]
+
+volumes:
+  tb-logs-volume:

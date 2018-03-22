@@ -1,1 +1,3 @@
 *.pickle
+data/speeches.pickle
+package-lock.json
