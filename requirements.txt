@@ -8,3 +8,5 @@ scipy==1.0.0
 tensorflow==1.6.0
 keras==2.1.5
 spacy==2.0.9
+dropbox==8.7.1
+pandas==0.22.0

@@ -1,5 +1,11 @@
 # coding: utf-8
 import pickle
+from pathlib import Path
+import pandas as pd
+from typing import List
+
+import spacy
+import dropbox
 import feedparser
 import re
 import unicodedata
@@ -10,12 +16,19 @@ from time import mktime
 import requests
 import sys
 from bs4 import BeautifulSoup
-from collections import defaultdict
+from collections import defaultdict, namedtuple
+import os
+
+from spacy.tokens import Doc, Span
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format='%(asctime)s %(name)s %(levelname)s: %(message)s')
 logger = logging.getLogger('scraper')
 logger.setLevel(logging.DEBUG)
+
+DROPBOX_TOKEN = os.getenv('DROPBOX_TOKEN', '')
+DROPBOX_SESSION_PATH = Path('/neural-politician') \
+    .joinpath(datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
 
 PARLAMENT_BASE_URL = 'https://www.parlament.gv.at'
 POLITICIANS = ['kurz', 'kern', 'strache', 'strolz']
@@ -26,6 +39,8 @@ PERIOD_FEEDS = {
     'XXV': 'https://www.parlament.gv.at/PAKT/PLENAR/filter.psp?view=RSS&RSS=RSS&jsMode=RSS&xdocumentUri=%2FPAKT%2FPLENAR%2Findex.shtml&view=RSS&NRBRBV=NR&GP=XXV&R_SISTEI=SI&LISTE=Anzeigen&listeId=1070&FBEZ=FP_007',
     'XXVI': 'https://www.parlament.gv.at/PAKT/PLENAR/filter.psp?view=RSS&RSS=RSS&jsMode=RSS&xdocumentUri=%2FPAKT%2FPLENAR%2Findex.shtml&view=RSS&NRBRBV=NR&GP=XXVI&R_SISTEI=SI&LISTE=Anzeigen&listeId=1070&FBEZ=FP_007',
 }
+
+Sentence = namedtuple('Sentence', ['words', 'politician', 'speech_id', 'sent_id'])
 
 
 def collect():
@@ -184,6 +199,7 @@ def pre_process():
 
 
 def read_speeches(politician):
+    # type: (str) -> List(str)
     single_speeches = []
     with open('./data/{}.txt'.format(politician), 'rt', encoding='utf8') as speeches_file:
         for line in speeches_file.readlines():
@@ -230,6 +246,41 @@ def read_speeches(politician):
     return single_speeches
 
 
+def extract_sentences(try_cached=True):
+    # type: (bool) -> List(Sentence)
+
+    sentences = []
+    sents_file = Path('./data/sentences.pickle')
+    if Path(sents_file).exists() and try_cached:
+        logger.info('Loading sentences from cache %s', sents_file)
+        with open(sents_file, 'rb') as pickle_file:
+            sentences = pickle.load(pickle_file)
+        logger.info('Loaded %d sentences from cache', len(sentences))
+    else:
+        nlp = spacy.load('de')
+        for politician in POLITICIANS:
+            logger.info('Extracting sentences of %s...', politician)
+            speeches = read_speeches(politician=politician)
+            for speech_id, speech in enumerate(speeches):
+                doc = nlp(speech)  # type: Doc
+                sent_id = 0
+                for sent in doc.sents:
+                    # check if valid sentence
+                    if sent.text.startswith('-') or len(sent) < 3:
+                        continue
+
+                    sent_id += 1
+                    words = [e.text for e in sent]
+                    sentences.append(Sentence(words=words, politician=politician,
+                                              sent_id=sent_id, speech_id=speech_id))
+            logger.info('Extracted sentences. Current count %d', len(sentences))
+        with open(sents_file, 'wb') as pickle_file:
+            pickle.dump(sentences, pickle_file)
+            logger.info('Saved extracted sentences to %s', str(sents_file))
+
+    return sentences
+
+
 def merge():
     # extract all single speeches
     all_speeches = []
@@ -248,7 +299,24 @@ def merge():
     return merged_speeches
 
 
+def db_upload(file_path):
+    # type: (Path) -> None
+    try:
+        dbx = dropbox.Dropbox(DROPBOX_TOKEN)
+        mode = dropbox.files.WriteMode.overwrite
+        db_path = str(DROPBOX_SESSION_PATH.joinpath(file_path))
+        with open(file_path, 'rb') as f:
+            data = f.read()
+        dbx.files_upload(data, db_path, mode, mute=False)
+        logger.info('Dropbox: Uploaded %s to %s', file_path, db_path)
+    except dropbox.exceptions.ApiError as err:
+        logger.error('Dropbox: API error', err)
+        print('*** API error', err)
+
+
 if __name__ == '__main__':
     # collect()
-    pre_process()
-    merge()
+    # pre_process()
+    # merge()
+
+    extract_sentences()

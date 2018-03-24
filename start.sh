@@ -110,9 +110,10 @@ elif [ "$1" == "deploy" ]; then
     gcloud compute scp  \
         ./docker-compose.yml \
         ./Dockerfile \
+        ./env \
         char_rnn.py \
         word_rnn.py \
-        reader.py \
+        data_mgmt.py \
         ${INSTANCE_NAME}:~/ --zone us-east1-d
     gcloud compute ssh ${INSTANCE_NAME} --command="sudo docker-compose -f ~/docker-compose.yml up -d --build --force-recreate" --zone us-east1-d
     gcloud compute ssh ${INSTANCE_NAME} --command="mkdir -p models" --zone us-east1-d
@@ -120,9 +121,12 @@ elif [ "$1" == "deploy" ]; then
 
 elif [ "$1" == "reset" ]; then
 
-    gcloud compute ssh ${INSTANCE_NAME} --command="sudo docker-compose -f ~/docker-compose.yml down -v" --zone us-east1-d
     echo "Deleting models in ./models/"
     gcloud compute ssh ${INSTANCE_NAME} --command="sudo rm -rf ./models/" --zone us-east1-d
+    echo "Deleting caches"
+    gcloud compute ssh ${INSTANCE_NAME} --command="sudo rm -rf ./cache/" --zone us-east1-d
+    echo "Deleting volumes"
+    gcloud compute ssh ${INSTANCE_NAME} --command="sudo docker-compose -f ~/docker-compose.yml down -v" --zone us-east1-d
 
 elif [ "$1" == "download-models" ]; then
 
