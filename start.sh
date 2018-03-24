@@ -8,9 +8,37 @@ if [ "$1" == "create" ]; then
 
     # https://cloud.google.com/compute/pricing
     gcloud compute instances create ${INSTANCE_NAME} \
-    --machine-type n1-standard-8 --zone us-east1-d \
+    --machine-type n1-highmem-8 --zone us-east1-d \
     --accelerator type=nvidia-tesla-k80,count=1 \
-    --boot-disk-size=200GB \
+    --boot-disk-size=100GB --image gpu-image \
+    --maintenance-policy TERMINATE --restart-on-failure \
+    --preemptible
+
+    while [ -n "$(gcloud compute ssh ${INSTANCE_NAME} --command "echo ok" --zone us-east1-d 2>&1 > /dev/null)" ]; do
+        echo "Waiting for VM to be available"
+        sleep 1.0
+    done
+
+elif [ "$1" == "delete" ]; then
+
+    gcloud compute instances delete --zone us-east1-d ${INSTANCE_NAME} --quiet
+
+elif [ "$1" == "upload-data" ]; then
+
+    gcloud compute scp ./data/ ${INSTANCE_NAME}:~/ --recurse --zone us-east1-d
+
+elif [ "$1" == "upload-models" ]; then
+
+#    gcloud compute ssh ${INSTANCE_NAME} --command="sudo chmod 777 ./models" --zone us-east1-d
+    gcloud compute scp ./models/ ${INSTANCE_NAME}:~/ --recurse --zone us-east1-d
+
+elif [ "$1" == "init" ]; then
+
+    # https://cloud.google.com/compute/pricing
+    gcloud compute instances create ${INSTANCE_NAME} \
+    --machine-type n1-standard-4 --zone us-east1-d \
+    --accelerator type=nvidia-tesla-k80,count=1 \
+    --boot-disk-size=100GB \
     --image-family ubuntu-1604-lts --image-project ubuntu-os-cloud \
     --maintenance-policy TERMINATE --restart-on-failure \
     --preemptible
@@ -23,23 +51,8 @@ if [ "$1" == "create" ]; then
     # Sleep to be sure
     sleep 1.0
 
-elif [ "$1" == "delete" ]; then
-
-    gcloud compute instances delete --zone us-east1-d ${INSTANCE_NAME} --quiet
-
-elif [ "$1" == "init" ]; then
-
     gcloud compute scp ./start.sh ./daemon.json ${INSTANCE_NAME}:~/ --zone us-east1-d
     gcloud compute ssh ${INSTANCE_NAME} --command="~/start.sh init-remote" --zone us-east1-d
-
-elif [ "$1" == "upload-data" ]; then
-
-    gcloud compute scp ./data/ ${INSTANCE_NAME}:~/ --recurse --zone us-east1-d
-
-elif [ "$1" == "upload-models" ]; then
-
-#    gcloud compute ssh ${INSTANCE_NAME} --command="sudo chmod 777 ./models" --zone us-east1-d
-    gcloud compute scp ./models/ ${INSTANCE_NAME}:~/ --recurse --zone us-east1-d
 
 elif [ "$1" == "init-remote" ]; then
 
@@ -89,14 +102,17 @@ elif [ "$1" == "init-remote" ]; then
     # Test nvidia-smi with the latest official CUDA image
     sudo docker run --rm nvidia/cuda nvidia-smi
 
+    # Fetch and cache base image
+    sudo docker pull jinnerbichler/neural-politician:latest
+
 elif [ "$1" == "deploy" ]; then
 
     gcloud compute scp  \
         ./docker-compose.yml \
         ./Dockerfile \
         char_rnn.py \
+        word_rnn.py \
         reader.py \
-        requirements-gpu.txt \
         ${INSTANCE_NAME}:~/ --zone us-east1-d
     gcloud compute ssh ${INSTANCE_NAME} --command="sudo docker-compose -f ~/docker-compose.yml up -d --build --force-recreate" --zone us-east1-d
     gcloud compute ssh ${INSTANCE_NAME} --command="mkdir -p models" --zone us-east1-d
@@ -111,6 +127,10 @@ elif [ "$1" == "reset" ]; then
 elif [ "$1" == "download-models" ]; then
 
     gcloud compute scp ${INSTANCE_NAME}:./models/* ./models/ --recurse --zone us-east1-d
+
+elif [ "$1" == "download-data" ]; then
+
+    gcloud compute scp ${INSTANCE_NAME}:./data/* ./data/ --recurse --zone us-east1-d
 
 elif [ "$1" == "logs" ]; then
 

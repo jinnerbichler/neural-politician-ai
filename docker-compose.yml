@@ -4,13 +4,14 @@ services:
 
   tensorflow:
     build: .
-    entrypoint: ["/usr/bin/python3", "char_rnn.py"]
+    entrypoint: ["/usr/bin/python3", "word_rnn.py"]
     environment:
       - "TENSORBOARD_LOGS_DIR=/tb_logs"
       - "MODELS_DIR=/models/"
     volumes:
       - tb-logs-volume:/tb_logs/
       - ./models/:/models/
+      - ./data/:/data/
   tensorboard:
     build: .
     ports:

@@ -206,6 +206,7 @@ def read_speeches(politician):
             speech = speech.replace('+', '')  # remove invalid plus
             speech = speech.replace('’', '\'')  # replace appostrove
             speech = speech.replace('‘', '\'')  # replace appostrove
+            speech = speech.replace('`', '\'')  # replace appostrove
             speech = speech.replace('“', '\'')  # replace appostrove
             speech = speech.replace('„', '\'')  # replace appostrove
             speech = speech.replace('–', '-')  # replace proper hyphen
