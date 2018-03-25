@@ -1,7 +1,6 @@
 # coding: utf-8
 import pickle
 from pathlib import Path
-import pandas as pd
 from typing import List
 
 import spacy
@@ -19,7 +18,10 @@ from bs4 import BeautifulSoup
 from collections import defaultdict, namedtuple
 import os
 
-from spacy.tokens import Doc, Span
+from spacy.tokens import Doc
+import numpy as np
+from keras.preprocessing.text import Tokenizer
+from keras.utils import to_categorical, Sequence
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format='%(asctime)s %(name)s %(levelname)s: %(message)s')
@@ -253,7 +255,7 @@ def extract_sentences(try_cached=True):
     sents_file = Path('./data/sentences.pickle')
     if Path(sents_file).exists() and try_cached:
         logger.info('Loading sentences from cache %s', sents_file)
-        with open(sents_file, 'rb') as pickle_file:
+        with open(str(sents_file), 'rb') as pickle_file:
             sentences = pickle.load(pickle_file)
         logger.info('Loaded %d sentences from cache', len(sentences))
     else:
@@ -274,7 +276,7 @@ def extract_sentences(try_cached=True):
                     sentences.append(Sentence(words=words, politician=politician,
                                               sent_id=sent_id, speech_id=speech_id))
             logger.info('Extracted sentences. Current count %d', len(sentences))
-        with open(sents_file, 'wb') as pickle_file:
+        with open(str(sents_file), 'wb') as pickle_file:
             pickle.dump(sentences, pickle_file)
             logger.info('Saved extracted sentences to %s', str(sents_file))
 
@@ -297,6 +299,47 @@ def merge():
         speeches_file.write(merged_speeches)
 
     return merged_speeches
+
+
+class SpeechSequence(Sequence):
+
+    def __init__(self, sentences, batch_size, num_words, sequence_length):
+        self.batch_size = batch_size
+        self.num_words = num_words
+        self.sequence_length = sequence_length
+        self.tokenizer = Tokenizer(filters='"#$%&()*+-/:;<=>@[\\]^_`{|}~\t\n')
+
+        # tokenize words
+        logger.debug('Tokenizing words...')
+        joined_sentences = ' '.join([w.lower() for sent in sentences for w in sent.words])
+        self.tokenizer.fit_on_texts([joined_sentences])
+        self.encoded = self.tokenizer.texts_to_sequences([joined_sentences])[0]
+        logger.debug('Tokenizied words. Len voc: %d', len(self.tokenizer.word_index))
+
+        # reducing vocabulary (minus one due to first index is 1)
+        self.encoded = [min(e, self.num_words - 1) for e in self.encoded]
+
+        # create word sequences
+        sequences = list()
+        logger.debug('Creating training sequences...')
+        for i in range(self.sequence_length, len(self.encoded)):
+            sequence = self.encoded[i - self.sequence_length:i + 1]
+            sequences.append(sequence)
+        logger.debug('Created sequences. Total Sequences: %d' % len(sequences))
+
+        # split into x and y elements
+        sequences = np.array(sequences)
+        self.sentences, self.next_words = sequences[:, :-1], sequences[:, -1]
+
+    def __len__(self):
+        return int(np.ceil(len(self.sentences) / float(self.batch_size)))
+
+    def __getitem__(self, idx):
+        batch_x = self.sentences[idx * self.batch_size:(idx + 1) * self.batch_size]
+        next_words = self.next_words[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = to_categorical(next_words, num_classes=self.num_words)
+
+        return batch_x, batch_y
 
 
 def db_upload(file_path):

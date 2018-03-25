@@ -15,16 +15,16 @@ services:
       - ./models/:/models/
       - ./data/:/data/
 
-#  tensorboard:
-#    build: .
-#    ports:
-#      - "80:6006"
-#      - "8080:8080"
-#    expose:
-#      - 8080
-#    volumes:
-#      - tb-logs-volume:/tb_logs/
-#    entrypoint: ["tensorboard",  "--logdir=/tb_logs/", "--host=0.0.0.0", "--port=6006"]
+  tensorboard:
+    build: .
+    ports:
+      - "80:6006"
+      - "8080:8080"
+    expose:
+      - 8080
+    volumes:
+      - tb-logs-volume:/tb_logs/
+    entrypoint: ["tensorboard",  "--logdir=/tb_logs/", "--host=0.0.0.0", "--port=6006"]
 
 volumes:
   tb-logs-volume:

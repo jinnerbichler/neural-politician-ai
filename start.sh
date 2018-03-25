@@ -8,8 +8,8 @@ if [ "$1" == "create" ]; then
 
     # https://cloud.google.com/compute/pricing
     gcloud compute instances create ${INSTANCE_NAME} \
-    --machine-type n1-highmem-8 --zone us-east1-d \
-    --accelerator type=nvidia-tesla-k80,count=1 \
+    --machine-type n1-standard-4 --zone us-east1-d \
+    --accelerator type=nvidia-tesla-k80,count=2 \
     --boot-disk-size=100GB --image gpu-image \
     --maintenance-policy TERMINATE --restart-on-failure \
     --preemptible
@@ -26,6 +26,7 @@ elif [ "$1" == "delete" ]; then
 elif [ "$1" == "upload-data" ]; then
 
     gcloud compute scp ./data/ ${INSTANCE_NAME}:~/ --recurse --zone us-east1-d
+#    gcloud compute ssh ${INSTANCE_NAME} --command="sudo chmod -R 777 /data" --zone us-east1-d
 
 elif [ "$1" == "upload-models" ]; then
 
@@ -113,7 +114,7 @@ elif [ "$1" == "deploy" ]; then
         ./env \
         char_rnn.py \
         word_rnn.py \
-        data_mgmt.py \
+        speech_data.py \
         ${INSTANCE_NAME}:~/ --zone us-east1-d
     gcloud compute ssh ${INSTANCE_NAME} --command="sudo docker-compose -f ~/docker-compose.yml up -d --build --force-recreate" --zone us-east1-d
     gcloud compute ssh ${INSTANCE_NAME} --command="mkdir -p models" --zone us-east1-d
