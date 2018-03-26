@@ -101,7 +101,7 @@ def train_generic():
     checkpoint_cb = ModelCheckpoint(stored_weights, monitor='loss', verbose=1,
                                     save_best_only=True, mode='min')
 
-    # Tensorboard callack
+    # Tensorboard callback
     tensorboard_cb = TensorBoard(log_dir=TENSORBOARD_LOGS_DIR, write_graph=True)
     tensorboard_cb.set_model(model)
 

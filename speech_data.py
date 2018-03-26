@@ -303,10 +303,11 @@ def merge():
 
 class SpeechSequence(Sequence):
 
-    def __init__(self, sentences, batch_size, num_words, sequence_length):
+    def __init__(self, sentences, batch_size, vocab_size, sequence_length):
         self.batch_size = batch_size
-        self.num_words = num_words
+        self.vocab_size = vocab_size
         self.sequence_length = sequence_length
+        self.raw_sentences = sentences
         self.tokenizer = Tokenizer(filters='"#$%&()*+-/:;<=>@[\\]^_`{|}~\t\n')
 
         # tokenize words
@@ -316,8 +317,8 @@ class SpeechSequence(Sequence):
         self.encoded = self.tokenizer.texts_to_sequences([joined_sentences])[0]
         logger.debug('Tokenizied words. Len voc: %d', len(self.tokenizer.word_index))
 
-        # reducing vocabulary (minus one due to first index is 1)
-        self.encoded = [min(e, self.num_words - 1) for e in self.encoded]
+        # reducing vocabulary (minus one because first index is 1)
+        self.encoded = [min(e, self.vocab_size - 1) for e in self.encoded]
 
         # create word sequences
         sequences = list()
@@ -331,13 +332,20 @@ class SpeechSequence(Sequence):
         sequences = np.array(sequences)
         self.sentences, self.next_words = sequences[:, :-1], sequences[:, -1]
 
+    def decode(self, encoded):
+        index_to_word = {v: k for k, v in self.tokenizer.word_index.items()}
+        return [index_to_word[min(e, len(self.tokenizer.word_index))] for e in encoded]
+
+    def decode_string(self, encoded):
+        return ' '.join(self.decode(encoded))
+
     def __len__(self):
         return int(np.ceil(len(self.sentences) / float(self.batch_size)))
 
     def __getitem__(self, idx):
         batch_x = self.sentences[idx * self.batch_size:(idx + 1) * self.batch_size]
         next_words = self.next_words[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_y = to_categorical(next_words, num_classes=self.num_words)
+        batch_y = to_categorical(next_words, num_classes=self.vocab_size)
 
         return batch_x, batch_y
 
