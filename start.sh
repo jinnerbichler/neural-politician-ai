@@ -9,7 +9,7 @@ if [ "$1" == "create" ]; then
     # https://cloud.google.com/compute/pricing
     gcloud compute instances create ${INSTANCE_NAME} \
     --machine-type n1-standard-4 --zone us-east1-d \
-    --accelerator type=nvidia-tesla-k80,count=2 \
+    --accelerator type=nvidia-tesla-k80,count=1 \
     --boot-disk-size=100GB --image gpu-image \
     --maintenance-policy TERMINATE --restart-on-failure \
     --preemptible
@@ -124,10 +124,12 @@ elif [ "$1" == "reset" ]; then
 
     echo "Deleting models in ./models/"
     gcloud compute ssh ${INSTANCE_NAME} --command="sudo rm -rf ./models/" --zone us-east1-d
-    echo "Deleting caches"
-    gcloud compute ssh ${INSTANCE_NAME} --command="sudo rm -rf ./cache/" --zone us-east1-d
     echo "Deleting volumes"
     gcloud compute ssh ${INSTANCE_NAME} --command="sudo docker-compose -f ~/docker-compose.yml down -v" --zone us-east1-d
+
+elif [ "$1" == "stop" ]; then
+
+    gcloud compute ssh ${INSTANCE_NAME} --command="sudo docker-compose -f ~/docker-compose.yml stop" --zone us-east1-d
 
 elif [ "$1" == "download-models" ]; then
 

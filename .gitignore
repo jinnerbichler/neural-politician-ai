@@ -1,5 +1,7 @@
 *.pickle
 data/speeches.pickle
+data/merged.txt
 package-lock.json
 models
 graph
+wiki.de.vec

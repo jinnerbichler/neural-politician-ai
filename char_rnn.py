@@ -13,7 +13,9 @@ from keras.callbacks import ModelCheckpoint, TensorBoard, LambdaCallback, Callba
 from keras.optimizers import RMSprop, Adam
 from keras import backend as K
 from tensorflow.python.client import device_lib
-import reader
+import speech_data as reader
+
+from speech_data import merge
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger('rnn')
@@ -198,4 +200,6 @@ def epoch_end_prediction(epoch, logs, model, text, char_to_int, int_to_char, n_c
 if __name__ == '__main__':
     local_device_protos = device_lib.list_local_devices()
     logger.info('Detected devices: {}'.format([d.name for d in local_device_protos]))
-    train_generic()
+    # train_generic()
+
+    merge()

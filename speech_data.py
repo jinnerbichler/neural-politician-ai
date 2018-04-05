@@ -1,5 +1,7 @@
 # coding: utf-8
 import pickle
+import time
+import urllib
 from pathlib import Path
 from typing import List
 
@@ -15,12 +17,11 @@ from time import mktime
 import requests
 import sys
 from bs4 import BeautifulSoup
-from collections import defaultdict, namedtuple
+from collections import defaultdict, namedtuple, OrderedDict, Counter
 import os
 
 from spacy.tokens import Doc
 import numpy as np
-from keras.preprocessing.text import Tokenizer
 from keras.utils import to_categorical, Sequence
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
@@ -35,6 +36,7 @@ DROPBOX_SESSION_PATH = Path('/neural-politician') \
 PARLAMENT_BASE_URL = 'https://www.parlament.gv.at'
 POLITICIANS = ['kurz', 'kern', 'strache', 'strolz']
 SPEECHES_PICKLE = './data/speeches.pickle'
+VOCAB_VECTORS = './data/word_vectors.pickle'
 
 PERIOD_FEEDS = {
     'XXIV': 'https://www.parlament.gv.at/PAKT/PLENAR/filter.psp?view=RSS&RSS=RSS&jsMode=RSS&xdocumentUri=%2FPAKT%2FPLENAR%2Findex.shtml&view=RSS&NRBRBV=NR&GP=XXIV&R_SISTEI=SI&LISTE=Anzeigen&listeId=1070&FBEZ=FP_007',
@@ -43,6 +45,7 @@ PERIOD_FEEDS = {
 }
 
 Sentence = namedtuple('Sentence', ['words', 'politician', 'speech_id', 'sent_id'])
+WordVector = namedtuple('WordVector', ['id', 'word', 'vector'])
 
 
 def collect():
@@ -101,8 +104,8 @@ def collect():
         with open(SPEECHES_PICKLE, 'wb') as pickle_file:
             pickle.dump(all_speeches, pickle_file)
 
-        # convert to text files
-        pre_process()
+        # convert to separate text file
+        split()
 
     num_speeches = sum([len(s) for s in all_speeches.values()])
     logger.info('Total speech count: {}'.format(num_speeches))
@@ -168,9 +171,9 @@ def parse_protocol(url):
     return speeches
 
 
-def pre_process():
+def split():
     """
-    Loads pickleds speeches and copies them in to separate
+    Loads pickleds speeches and splits them in to separate
     textfiles (i.e. on per politician).
     """
     with open(SPEECHES_PICKLE, 'rb') as pickle_file:
@@ -222,9 +225,9 @@ def read_speeches(politician):
             speech = speech.replace('_i', 'I')  # replace gender-related underscores
             speech = speech.replace('*', '')  # remove invalid star
             speech = speech.replace('+', '')  # remove invalid plus
-            speech = speech.replace('’', '\'')  # replace appostrove
-            speech = speech.replace('‘', '\'')  # replace appostrove
-            speech = speech.replace('`', '\'')  # replace appostrove
+            speech = speech.replace('’', '')  # replace appostrove
+            speech = speech.replace('‘', '')  # replace appostrove
+            speech = speech.replace('`', '')  # replace appostrove
             speech = speech.replace('“', '\'')  # replace appostrove
             speech = speech.replace('„', '\'')  # replace appostrove
             speech = speech.replace('–', '-')  # replace proper hyphen
@@ -301,73 +304,219 @@ def merge():
     return merged_speeches
 
 
-class SpeechSequence(Sequence):
-
-    def __init__(self, sentences, batch_size, vocab_size, sequence_length):
-        self.batch_size = batch_size
-        self.vocab_size = vocab_size
-        self.sequence_length = sequence_length
-        self.raw_sentences = sentences
-        self.tokenizer = Tokenizer(filters='"#$%&()*+-/:;<=>@[\\]^_`{|}~\t\n')
-
-        # tokenize words
-        logger.debug('Tokenizing words...')
-        joined_sentences = ' '.join([w.lower() for sent in sentences for w in sent.words])
-        self.tokenizer.fit_on_texts([joined_sentences])
-        self.encoded = self.tokenizer.texts_to_sequences([joined_sentences])[0]
-        logger.debug('Tokenizied words. Len voc: %d', len(self.tokenizer.word_index))
-
-        # reducing vocabulary (minus one because first index is 1)
-        self.encoded = [min(e, self.vocab_size - 1) for e in self.encoded]
-
-        # create word sequences
-        sequences = list()
-        logger.debug('Creating training sequences...')
-        for i in range(self.sequence_length, len(self.encoded)):
-            sequence = self.encoded[i - self.sequence_length:i + 1]
-            sequences.append(sequence)
-        logger.debug('Created sequences. Total Sequences: %d' % len(sequences))
-
-        # split into x and y elements
-        sequences = np.array(sequences)
-        self.sentences, self.next_words = sequences[:, :-1], sequences[:, -1]
-
-    def decode(self, encoded):
-        index_to_word = {v: k for k, v in self.tokenizer.word_index.items()}
-        return [index_to_word[min(e, len(self.tokenizer.word_index))] for e in encoded]
-
-    def decode_string(self, encoded):
-        return ' '.join(self.decode(encoded))
-
-    def __len__(self):
-        return int(np.ceil(len(self.sentences) / float(self.batch_size)))
-
-    def __getitem__(self, idx):
-        batch_x = self.sentences[idx * self.batch_size:(idx + 1) * self.batch_size]
-        next_words = self.next_words[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_y = to_categorical(next_words, num_classes=self.vocab_size)
-
-        return batch_x, batch_y
-
-
 def db_upload(file_path):
     # type: (Path) -> None
     try:
         dbx = dropbox.Dropbox(DROPBOX_TOKEN)
         mode = dropbox.files.WriteMode.overwrite
         db_path = str(DROPBOX_SESSION_PATH.joinpath(file_path))
-        with open(file_path, 'rb') as f:
+        with open(str(file_path), 'rb') as f:
             data = f.read()
         dbx.files_upload(data, db_path, mode, mute=False)
         logger.info('Dropbox: Uploaded %s to %s', file_path, db_path)
     except dropbox.exceptions.ApiError as err:
         logger.error('Dropbox: API error', err)
-        print('*** API error', err)
+
+
+def extract_word_vectors(sentences, try_cached=True):
+    # check if already extracted
+    if Path(VOCAB_VECTORS).exists() and try_cached:
+        with open(VOCAB_VECTORS, 'rb') as pickle_file:
+            return pickle.load(pickle_file)
+
+    # creating dictionary
+    words_speeches = {w.lower() for s in sentences for w in s.words}
+
+    # download word vectors if necessary
+    local_vec_file = Path('wiki.de.vec').absolute()
+    if not local_vec_file.exists():
+        logger.info('Downloading word vectors. This might take a while... ')
+        download_word_vectors(str(local_vec_file))
+
+    # extract necessary word vectors
+    word_vectors = OrderedDict()
+    vec_iter = 0
+    with open(str(local_vec_file), 'r') as vector_file:
+        for line in vector_file:
+            columns = line.split()
+            if len(columns) == 301:  # word plus vector
+                word = columns[0]
+                if word in words_speeches:
+                    if word in word_vectors:  # word may appear twice
+                        continue
+                    vector = [float(v) for v in columns[-300:]]
+                    word_vec = WordVector(id=len(word_vectors), word=word, vector=vector)
+                    word_vectors[word] = word_vec
+
+                vec_iter += 1
+                if vec_iter % 50000 == 0:
+                    logger.info('Checked {} words. Matches: {}'.format(
+                        vec_iter, len(word_vectors)))
+
+    logger.info('Matches: {}. Not found: {}'.format(
+        len(word_vectors), len(words_speeches) - len(word_vectors)))
+
+    # store extracted vectors
+    with open(VOCAB_VECTORS, 'wb') as pickle_file:
+        pickle.dump(word_vectors, pickle_file)
+
+    logger.info('Wrote {} word vectors to {}'.format(len(word_vectors), VOCAB_VECTORS))
+
+    return word_vectors
+
+
+def download_word_vectors(local_file):
+    def reporthook(count, block_size, total_size):
+        global start_time
+        if count == 0:
+            start_time = time.time()
+            return
+        duration = time.time() - start_time
+        progress_size = int(count * block_size)
+        speed = int(progress_size / (1024 * duration))
+        percent = int(count * block_size * 100 / total_size)
+        sys.stdout.write("\r...%d%%, %d MB, %d KB/s, %d seconds passed" %
+                         (percent, progress_size / (1024 * 1024), speed, duration))
+        sys.stdout.flush()
+
+    logger.info('Downloading word vectors. This might take a while... ')
+    wordvec_url = 'https://s3-us-west-1.amazonaws.com/fasttext-vectors/wiki.de.vec'
+    urllib.request.urlretrieve(wordvec_url, local_file, reporthook)
+
+
+class SpeechSequence(Sequence):
+
+    def __init__(self, sentences, output_size, batch_size, word_vectors, sequence_len,
+                 oov_token=None):
+        self.batch_size = batch_size
+        self.sequence_length = sequence_len
+        self.oov_token = oov_token or '<UNK>'
+        self.raw_sentences = None
+        self.input_encoded = None
+        self.sequences = None
+        self.next_words = None
+        self.corpus_size = None
+        self.input_words = None
+        self.output_encoded = None
+        self.words_raw = [w.lower() for sent in sentences for w in sent.words]
+
+        # build input vocabulary
+        self.word_vectors = word_vectors.copy()
+        self.word_vectors[self.oov_token] = WordVector(word=self.oov_token,
+                                                       id=len(word_vectors),
+                                                       vector=[0.0] * 300)
+        self.input_vocab = {w: wv.id for w, wv in self.word_vectors.items()}
+        self.input_word_ids = {v: k for k, v in self.input_vocab.items()}
+        self.input_vocab_size = len(self.word_vectors)
+        self.input_unk_id = len(word_vectors)
+
+        # tokenize and build OUTPUT vocabulary
+        logger.debug('Building output vocablary...')
+        word_counts_raw = Counter(self.words_raw)
+        most_com = word_counts_raw.most_common(output_size - 1)  # oov token will be added
+        self.output_vocab = {w[0]: i for i, w in enumerate(most_com) if i < output_size}
+        self.output_vocab[self.oov_token] = len(self.output_vocab)  # last element is oov
+        self.output_word_ids = {v: k for k, v in self.output_vocab.items()}
+        self.output_unk_id = self.output_vocab[self.oov_token]
+        self.output_vocab_size = len(self.output_vocab)
+        self.output_word_counts = {w: c for w, c in most_com}
+        output_unks = sum([v for k, v in word_counts_raw.items()
+                           if k not in self.output_vocab])
+        self.output_word_counts[self.oov_token] = output_unks
+        logger.debug('Tokenizied OUTPUT words. Vocab size: %d, Corpus size: %d, Unks %d',
+                     self.output_vocab_size, len(self.words_raw), output_unks)
+
+        # encoding words
+        logger.debug('Encoding words...')
+        input_words = []
+        for word in self.words_raw:
+            input_word = word if word in self.word_vectors else self.oov_token
+            input_words.append(input_word)
+
+        # count words in vocabulary
+        self.input_word_counts = Counter(input_words)
+        self.input_vocab_size = len(self.input_word_counts)
+        input_corpus_size = len(input_words)
+        logger.debug('Tokenizied INPUT words. Vocab size: %d, Corpus size: %d, Unks %d',
+                     self.input_vocab_size, input_corpus_size,
+                     self.input_word_counts[self.oov_token])
+
+    def adapt(self, sentences):
+
+        # encode words
+        words = [w.lower() for sent in sentences for w in sent.words]
+        logger.info('Adapting {} words'.format(len(words)))
+        self.input_encoded = [self.input_vocab.get(w, self.input_unk_id)
+                              for w in words]
+        self.output_encoded = [self.output_vocab.get(w, self.output_unk_id)
+                               for w in words]
+
+        # create word sequences
+        input_sequences = list()
+        output_sequences = list()
+        logger.debug('Creating training sequences...')
+        for i in range(self.sequence_length, len(self.input_encoded)):
+            input_sequence = self.input_encoded[i - self.sequence_length:i + 1]
+            input_sequences.append(input_sequence)
+
+            output_sequence = self.output_encoded[i - self.sequence_length:i + 1]
+            output_sequences.append(output_sequence)
+        logger.debug('Created sequences. Total Sequences: %d' % len(input_sequences))
+
+        # split into x and y elements
+        input_sequences = np.array(input_sequences)
+        output_sequences = np.array(output_sequences)
+        self.sequences, self.next_words = input_sequences[:, :-1], output_sequences[:, -1]
+
+    def in_to_out(self, word_id):
+        word = self.input_word_ids.get(word_id, self.oov_token)
+        return self.output_vocab.get(word, self.output_unk_id)
+
+    def out_to_in(self, word_id):
+        word = self.output_word_ids.get(word_id, self.oov_token)
+        return self.input_vocab.get(word, self.input_unk_id)
+
+    def decode_input(self, encoded):
+        return [self.input_word_ids[e] for e in encoded]
+
+    def decode_input_string(self, encoded):
+        return ' '.join(self.decode_input(encoded))
+
+    def decode_output(self, encoded):
+        return [self.output_word_ids[e] for e in encoded]
+
+    def decode_output_string(self, encoded):
+        return ' '.join(self.decode_output(encoded))
+
+    def __len__(self):
+        return int(np.ceil(len(self.sequences) / float(self.batch_size)))
+
+    def __getitem__(self, idx):
+        batch_x = self.sequences[idx * self.batch_size:(idx + 1) * self.batch_size]
+        next_words = self.next_words[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = to_categorical(next_words, num_classes=self.output_vocab_size)
+
+        return batch_x, batch_y
 
 
 if __name__ == '__main__':
+    # collect data from open data portal
     # collect()
+
+    # splits data into text files for each politician
     # pre_process()
+
+    # merges all speeches into one text file
     # merge()
 
-    extract_sentences()
+    # extracts sentences and assign them to politicians
+    sentences = extract_sentences(try_cached=True)
+    word_vecs = extract_word_vectors(sentences)
+
+    dataset = SpeechSequence(sentences=sentences, output_size=5000, batch_size=50,
+                             word_vectors=word_vecs, sequence_len=15, oov_token='<UNK>')
+    dataset.adapt(sentences=sentences)
+
+    x, y = dataset[0]
+
+    print(x, y)
