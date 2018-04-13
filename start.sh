@@ -23,6 +23,10 @@ elif [ "$1" == "delete" ]; then
 
     gcloud compute instances delete --zone us-east1-d ${INSTANCE_NAME} --quiet
 
+elif [ "$1" == "restart" ]; then
+
+    gcloud compute instances start ${INSTANCE_NAME}
+
 elif [ "$1" == "upload-data" ]; then
 
     gcloud compute scp ./data/ ${INSTANCE_NAME}:~/ --recurse --zone us-east1-d
