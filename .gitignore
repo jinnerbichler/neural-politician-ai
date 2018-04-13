@@ -1,5 +1,4 @@
 *.pickle
-data/speeches.pickle
 data/merged.txt
 package-lock.json
 models
