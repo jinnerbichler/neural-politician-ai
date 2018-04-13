@@ -37,6 +37,7 @@ PARLAMENT_BASE_URL = 'https://www.parlament.gv.at'
 POLITICIANS = ['kurz', 'kern', 'strache', 'strolz']
 SPEECHES_PICKLE = './data/speeches.pickle'
 VOCAB_VECTORS = './data/word_vectors.pickle'
+DATASET_FILE = './data/dataset.pickle'
 
 PERIOD_FEEDS = {
     'XXIV': 'https://www.parlament.gv.at/PAKT/PLENAR/filter.psp?view=RSS&RSS=RSS&jsMode=RSS&xdocumentUri=%2FPAKT%2FPLENAR%2Findex.shtml&view=RSS&NRBRBV=NR&GP=XXIV&R_SISTEI=SI&LISTE=Anzeigen&listeId=1070&FBEZ=FP_007',
@@ -414,7 +415,8 @@ class SpeechSequence(Sequence):
         logger.debug('Building output vocablary...')
         word_counts_raw = Counter(self.words_raw)
         most_com = word_counts_raw.most_common(output_size - 1)  # oov token will be added
-        self.output_vocab = {w[0]: i for i, w in enumerate(most_com) if i < output_size}
+        output_w = sorted([tup[0] for tup in most_com])
+        self.output_vocab = {w: i for i, w in enumerate(output_w) if i < output_size}
         self.output_vocab[self.oov_token] = len(self.output_vocab)  # last element is oov
         self.output_word_ids = {v: k for k, v in self.output_vocab.items()}
         self.output_unk_id = self.output_vocab[self.oov_token]
@@ -440,6 +442,17 @@ class SpeechSequence(Sequence):
         logger.debug('Tokenizied INPUT words. Vocab size: %d, Corpus size: %d, Unks %d',
                      self.input_vocab_size, input_corpus_size,
                      self.input_word_counts[self.oov_token])
+
+    def save(self, path=None):
+        path = path or DATASET_FILE
+        with open(path, 'wb') as pickle_file:
+            pickle.dump(self, pickle_file)
+
+    @staticmethod
+    def load(path):
+        path = path or DATASET_FILE
+        with open(path, 'rb') as pickle_file:
+            return pickle.load(pickle_file)
 
     def adapt(self, sentences):
 

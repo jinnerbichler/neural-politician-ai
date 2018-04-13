@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from keras import Sequential, Model
+from keras import backend as K
 from keras.callbacks import TensorBoard, LambdaCallback, ModelCheckpoint
 from keras.layers import Embedding, LSTM, Dense, Dropout
 from keras.optimizers import Adam
@@ -32,24 +33,35 @@ LSTM_SIZE = 1024
 VOCAB_OUTPUT = 5000
 EMBEDDING_SIZE = 300  # fixed in pre-trained embeddings
 
+LOCAL_DEBUG = os.getenv('LOCAL_DEBUG', 'false') == 'true'
+
 
 def main():
     sentences = speech_data.extract_sentences(try_cached=True)  # type: List(Sentence)
 
-    if False:
-        global BATCH_SIZE
-        global LSTM_SIZE
-        global VOCAB_OUTPUT
-        sentences = sentences[:20]
-        BATCH_SIZE = 8
-        LSTM_SIZE = 100
-        VOCAB_OUTPUT = 150
+    speech_data_file = Path(speech_data.DATASET_FILE).absolute()
+    # if LOCAL_DEBUG:
+    #     global BATCH_SIZE
+    #     global LSTM_SIZE
+    #     global VOCAB_OUTPUT
+    #     sentences = sentences[:20]
+    #     BATCH_SIZE = 8
+    #     LSTM_SIZE = 100
+    #     VOCAB_OUTPUT = 150
+    #     speech_data_file = Path('./data/dataset_local.pickle').absolute()
 
-    # create dataset based on all sentences
+    # create dataset based on all sentences. Dataset is stored in separated pickle file
+    # in order to ensure reproducable words IDs.
     word_vectors = speech_data.extract_word_vectors(sentences=sentences, try_cached=True)
-    dataset = SpeechSequence(sentences=sentences, output_size=VOCAB_OUTPUT,
-                             batch_size=BATCH_SIZE, word_vectors=word_vectors,
-                             sequence_len=SEQUENCE_LENGTH)
+    if speech_data_file.exists():
+        logger.info('Loading dataset %s', speech_data_file)
+        dataset = SpeechSequence.load(path=str(speech_data_file))
+    else:
+        dataset = SpeechSequence(sentences=sentences, output_size=VOCAB_OUTPUT,
+                                 batch_size=BATCH_SIZE, word_vectors=word_vectors,
+                                 sequence_len=SEQUENCE_LENGTH)
+        dataset.save(path=str(speech_data_file))
+        logger.info('Saving dataset %s', speech_data_file)
     dataset.adapt(sentences=sentences)
     word_vectors = dataset.word_vectors  # added vector of for OOV tokens
     embeddings_path = create_tensorboard_embeddings(dataset=dataset)
@@ -58,40 +70,54 @@ def main():
     logger.info('Prepared data with length %d', len(dataset))
 
     # create generic model
-    generic_model_file = Path(MODELS_DIR).joinpath('word_generic.hdf5').absolute()
+    generic_model_file = Path(MODELS_DIR).joinpath('generic.h5').absolute()
     model = create_rnn(name='generic', word_vectors=word_vectors,
                        output_size=dataset.output_vocab_size, lstm_size=LSTM_SIZE,
-                       sequence_len=SEQUENCE_LENGTH, weights_file=generic_model_file)
+                       sequence_len=SEQUENCE_LENGTH, weights_file=generic_model_file,
+                       learning_rate=0.0001, dropout_rate=0.01)
     model.summary()
 
     # train generic model
     logger.info('Training generic model with all sentences')
     train(model=model, dataset=dataset, checkpoint_file=str(generic_model_file),
-          embeddings_path=embeddings_path, epochs=400)
+          embeddings_path=embeddings_path, epochs=10)
 
     # train specific model for each politician
     for politician in speech_data.POLITICIANS:
         logger.info('Training model for %s', politician)
 
-        # create dataset with sentences from specific politician
+        # clear old TensorFlow session
+        K.clear_session()
+
+        specific_model_file = Path(MODELS_DIR).joinpath('{}.h5'.format(politician))
+        specific_model_file = specific_model_file.absolute()
+
+        # filter sentences from specific politician
         filtered_sentences = [s for s in sentences if s.politician == politician]
+
+        # if LOCAL_DEBUG:
+        #     specific_model_file = Path(MODELS_DIR).joinpath(
+        #         'local_{}.h5'.format(politician)).absolute()
+        #     filtered_sentences = filtered_sentences[:40]
+
+        # adapt dataset to specific sentences
         dataset.adapt(filtered_sentences)
 
         # create specific model
-        specific_model_file = Path(MODELS_DIR).joinpath('word_{}.hdf5'.format(politician))
-        specific_model_file = specific_model_file.absolute()
         model = create_rnn(name=politician, word_vectors=word_vectors,
                            output_size=dataset.output_vocab_size, lstm_size=LSTM_SIZE,
-                           sequence_len=SEQUENCE_LENGTH, weights_file=generic_model_file)
+                           sequence_len=SEQUENCE_LENGTH, weights_file=generic_model_file,
+                           learning_rate=0.00001, dropout_rate=0.0)
         model.summary()
 
         # train specific model
         train(model=model, dataset=dataset, checkpoint_file=str(specific_model_file),
-              embeddings_path=embeddings_path, epochs=15)
+              embeddings_path=embeddings_path, epochs=20)
 
 
 # noinspection PyBroadException
-def create_rnn(name, word_vectors, output_size, sequence_len, lstm_size, weights_file):
+def create_rnn(name, word_vectors, output_size, sequence_len, lstm_size, weights_file,
+               learning_rate, dropout_rate):
     vocab_size = len(word_vectors)
 
     # prepare pre-trained word embeddings
@@ -105,26 +131,26 @@ def create_rnn(name, word_vectors, output_size, sequence_len, lstm_size, weights
     model.add(Embedding(vocab_size, EMBEDDING_SIZE, weights=[embedding_matrix],
                         input_length=sequence_len, trainable=False))
     model.add(LSTM(lstm_size, return_sequences=True))
-    # model.add(Dropout(rate=0.1))
+    model.add(Dropout(rate=dropout_rate))
     model.add(LSTM(lstm_size))
-    # model.add(Dropout(rate=0.1))
+    model.add(Dropout(rate=dropout_rate))
     model.add(Dense(output_size, activation='softmax'))
 
-    # try load existing weights
+    # compile network
+    optimizer = Adam(lr=learning_rate)
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer,
+                  metrics=['accuracy'])
+
+    # try load existing model_file
     try:
         if weights_file and Path(weights_file).exists():
             logger.info('Reading weights from %s', weights_file)
-            model.load_weights(filepath=weights_file)
+            model.load_weights(filepath=weights_file, by_name=True)
             logger.info('Successfully loaded weights from %s', weights_file)
         else:
             logger.info('No stored weights found.')
     except:
-        logger.exception('Cannot not read stored weights!')
-
-    # compile network
-    optimizer = Adam(lr=0.0001)
-    model.compile(loss='categorical_crossentropy', optimizer=optimizer,
-                  metrics=['accuracy'])
+        logger.exception('Cannot not read weights model!')
 
     return model
 
@@ -133,7 +159,7 @@ def train(model, dataset, checkpoint_file, epochs, embeddings_path):
     # define the checkpoint
     logger.info('Storing weights in %s', checkpoint_file)
     checkpoint_cb = ModelCheckpoint(checkpoint_file, monitor='loss', verbose=1,
-                                    save_best_only=True, mode='min')
+                                    mode='min', save_best_only=True)
 
     # Tensorboard callack
     tensorboard_cb = TensorBoard(log_dir=TENSORBOARD_LOGS_DIR, write_graph=True,
@@ -142,14 +168,14 @@ def train(model, dataset, checkpoint_file, epochs, embeddings_path):
     tensorboard_cb.set_model(model)
 
     # prediction/validation callback
-    predict_cb = partial(epoch_end_prediction, model=model, dataset=dataset)
-    predict_cb = LambdaCallback(on_epoch_end=predict_cb)
+    prediction_cb = partial(epoch_end_prediction, model=model, dataset=dataset)
+    prediction_cb = LambdaCallback(on_epoch_end=prediction_cb)
 
     # learning rate decay
     # learning_rate_decay_db = LearningRateReducer(reduce_rate=0.1)
 
     # fit the model
-    callbacks = [checkpoint_cb, tensorboard_cb, predict_cb]
+    callbacks = [checkpoint_cb, tensorboard_cb, prediction_cb]
 
     # adapt weights for proper handling of under-represented classes
     word_counts = dataset.output_word_counts
@@ -163,7 +189,7 @@ def train(model, dataset, checkpoint_file, epochs, embeddings_path):
         return 1.0 / ((word_count - min_count) / (max_count - min_count) + 0.5)
 
     class_weights = {w: class_weight(w) for w in dataset.output_word_ids}
-    class_weights = {w: 1.0 for w in dataset.output_vocab.values()}  # ToDo: remove
+    # class_weights = {w: 1.0 for w in dataset.output_vocab.values()}  # ToDo: remove
     class_weights[dataset.output_unk_id] = 1e-7  # decrease loss for UNK
 
     model.fit_generator(generator=dataset, epochs=epochs, verbose=1, callbacks=callbacks,
