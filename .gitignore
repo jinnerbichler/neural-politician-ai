@@ -3,4 +3,5 @@ data/merged.txt
 package-lock.json
 models
 graph
+web/frontend/*
 wiki.de.vec
