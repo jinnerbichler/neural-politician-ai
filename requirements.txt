@@ -6,8 +6,8 @@ html5lib==0.9999999
 nltk==3.2.5
 h5py==2.7.1
 scipy==1.0.0
-tensorflow==1.7.0
 keras==2.1.5
+tensorflow==1.7.0
 spacy==2.0.9
 dropbox==8.7.1
 pandas==0.22.0
