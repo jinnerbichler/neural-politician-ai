@@ -1,2 +1,8 @@
 db.sqlite3
-backend/trained_models/*.h5
+
+*.pickle
+ai/data/merged.txt
+ai/package-lock.json
+ai/models
+ai/graph
+ai/wiki.de.vec

@@ -4,3 +4,11 @@ keras==2.1.5
 h5py==2.7.1
 numpy==1.14.2
 spacy==2.0.11
+feedparser==5.2.1
+beautifulsoup4==4.6.0
+requests==2.18.4
+html5lib==0.9999999
+nltk==3.2.5
+h5py==2.7.1
+dropbox==8.7.1
+pandas==0.22.0

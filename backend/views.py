@@ -1,8 +1,8 @@
 import glob
 import itertools
 import logging
-import pickle
 import re
+import sys
 from pathlib import Path
 
 from django.http import JsonResponse
@@ -11,52 +11,33 @@ import numpy as np
 from keras import Sequential
 from keras import backend as K
 from keras.models import load_model
-import spacy
+
+from ai.speech_data import SpeechSequence
+import ai.speech_data as speech_data
+from ai.word_rnn import sample_word
 
 logger = logging.getLogger(__name__)
 
 MODELS = {}
 GRAPHS = {}
 SESSIONS = {}
-VOCAB = None  # type: SpeechVocabulary
-UNK = '<UNK>'
+VOCAB = None  # type: SpeechSequence
 SEQUENCE_LEN = 15
 MIN_NUM_GENERATED = 100
-
-
-class SpeechVocabulary:
-
-    def __init__(self, vocab):
-        self.input_vocab = vocab['input']
-        self.input_word_ids = {v: k for k, v in self.input_vocab.items()}
-        self.input_unk_id = len(self.input_vocab) - 1
-        self.output_vocab = vocab['output']
-        self.output_word_ids = {v: k for k, v in self.output_vocab.items()}
-        self.output_unk_id = len(self.output_vocab) - 1
-
-    def encode_input(self, words):
-        return [self.input_vocab.get(w.lower(), self.input_unk_id) for w in words]
-
-    def decode_input(self, encoded):
-        return [self.input_word_ids[e] for e in encoded]
-
-    def encode_output(self, words):
-        return [self.output_vocab.get(w.lower(), self.output_unk_id) for w in words]
-
-    def decode_output(self, encoded):
-        return [self.output_word_ids[e] for e in encoded]
-
-    def out_to_in(self, word_id):
-        word = self.output_word_ids.get(word_id, UNK)
-        return self.input_vocab.get(word, self.input_unk_id)
 
 
 def init_models():
     global MODELS, VOCAB
 
+    # load applied vocabulary
+    sys.modules['speech_data'] = speech_data
+    VOCAB = SpeechSequence.load(path='./ai/data/dataset.pickle')
+
     # load pretrained models
-    for filepath in glob.iglob('./backend/trained_models/*.h5'):
+    for filepath in glob.iglob('./ai/models/*.h5'):
         politician = ''.join(Path(filepath).name.split('.')[:-1])
+        if politician != 'kurz':
+            continue
         logger.info('Loading model {}'.format(filepath))
 
         with tf.Graph().as_default() as graph:
@@ -65,20 +46,6 @@ def init_models():
                 GRAPHS[politician] = graph
                 SESSIONS[politician] = session
         K.clear_session()
-
-    # load applied vocabulary
-    with open('./backend/trained_models/raw_vocab.pickle', 'rb') as pickle_file:
-        vocab_data = pickle.load(pickle_file)
-        VOCAB = SpeechVocabulary(vocab_data)
-
-
-def sample_word(preds, temperature=1.0):
-    preds = np.asarray(preds).astype('float64')
-    preds = np.log(preds) / temperature
-    exp_preds = np.exp(preds)
-    preds = exp_preds / np.sum(exp_preds)
-    probas = np.random.multinomial(1, preds, 1)
-    return np.argmax(probas)
 
 
 def generate_speech(request):
