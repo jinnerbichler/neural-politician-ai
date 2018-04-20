@@ -6,3 +6,5 @@ ai/package-lock.json
 ai/models
 ai/graph
 ai/wiki.de.vec
+
+frontend/*
