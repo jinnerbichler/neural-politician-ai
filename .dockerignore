@@ -1,0 +1,5 @@
+docker-compose-prod.yml
+db.sqlite3
+ai/graph
+infrastructure
+ai/models/generic.h5

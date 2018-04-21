@@ -8,3 +8,5 @@ ai/graph
 ai/wiki.de.vec
 
 frontend/*
+docker-compose-prod.yml
+fabfile.py

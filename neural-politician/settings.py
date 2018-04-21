@@ -141,3 +141,5 @@ LOGGING = {
 }
 
 CORS_ORIGIN_ALLOW_ALL = True
+
+STATIC_ROOT = os.getenv('STATIC_ROOT', './static_root/')
