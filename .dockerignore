@@ -1,5 +1,5 @@
 docker-compose-prod.yml
 db.sqlite3
-ai/graph
+intelligence/graph
 infrastructure
-ai/models/generic.h5
+intelligence/models/generic.h5

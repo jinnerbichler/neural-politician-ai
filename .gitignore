@@ -1,11 +1,11 @@
 db.sqlite3
 
 *.pickle
-ai/data/merged.txt
-ai/package-lock.json
-ai/models
-ai/graph
-ai/wiki.de.vec
+intelligence/data/merged.txt
+intelligence/package-lock.json
+intelligence/models
+intelligence/graph
+intelligence/wiki.de.vec
 
 frontend/*
 docker-compose-prod.yml
