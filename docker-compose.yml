@@ -1,0 +1,56 @@
+version: '3'
+services:
+
+#  nginx:
+#    build: ./infrastructure/nginx/
+#    container_name: nginx
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    volumes:
+#      - static-files:/static
+##      - /etc/letsencrypt/:/etc/letsencrypt/
+#    depends_on:
+#      - zendi_web
+#    networks:
+#      - nginx-backend
+
+  web:
+    build: .
+    container_name: neural-politician-web
+    entrypoint: bash -c "python manage.py collectstatic --noinput && python manage.py migrate && gunicorn neural-politician.wsgi -b 0.0.0.0:8000 --timeout 900 --graceful-timeout 900 --log-level info --workers=4"
+    ports:
+      - "8000:8000"
+    env_file:
+      - env
+    volumes:
+      - static-files:/static
+    depends_on:
+      - db
+    networks:
+      - db-backend
+      - nginx-backend
+
+  db:
+    image: postgres:10.0
+    container_name: neural-politician-db
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=5bdb16d98d8b42cdbbeee0de824441f1
+      - POSTGRES_DB=zendi_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - db-backend
+
+volumes:
+   static-files:
+   pgdata:
+
+networks:
+  db-backend:
+  nginx-backend:
+    external:
+      name: nginx-backend
