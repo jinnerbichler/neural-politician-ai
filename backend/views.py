@@ -36,8 +36,8 @@ def init_models():
     # load pretrained models
     for filepath in glob.iglob('./intelligence/models/*.h5'):
         politician = ''.join(Path(filepath).name.split('.')[:-1])
-        if politician != 'kurz':
-            continue
+        # if politician != 'kurz':
+        #     continue
         logger.info('Loading model {}'.format(filepath))
 
         with tf.Graph().as_default() as graph:
