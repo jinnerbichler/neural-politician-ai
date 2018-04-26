@@ -12,9 +12,9 @@ from keras import Sequential
 from keras import backend as K
 from keras.models import load_model
 
-from ai.speech_data import SpeechSequence
-import ai.speech_data as speech_data
-from ai.word_rnn import sample_word
+from intelligence.speech_data import SpeechSequence
+import intelligence.speech_data as speech_data
+from intelligence.word_rnn import sample_word
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,10 @@ def init_models():
 
     # load applied vocabulary
     sys.modules['speech_data'] = speech_data
-    VOCAB = SpeechSequence.load(path='./ai/data/dataset.pickle')
+    VOCAB = SpeechSequence.load(path='./intelligence/data/dataset.pickle')
 
     # load pretrained models
-    for filepath in glob.iglob('./ai/models/*.h5'):
+    for filepath in glob.iglob('./intelligence/models/*.h5'):
         politician = ''.join(Path(filepath).name.split('.')[:-1])
         if politician != 'kurz':
             continue

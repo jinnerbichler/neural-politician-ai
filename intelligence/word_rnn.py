@@ -18,8 +18,8 @@ import numpy as np
 np.random.seed(1)
 tf.set_random_seed(1)
 
-from ai.speech_data import SpeechSequence, Sentence
-import ai.speech_data as speech_data
+from intelligence.speech_data import SpeechSequence, Sentence
+import intelligence.speech_data as speech_data
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger('word_rnn')

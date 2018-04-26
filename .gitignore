@@ -1,4 +1,5 @@
 db.sqlite3
+neural-politician/settings-prod.py
 
 *.pickle
 intelligence/data/merged.txt
