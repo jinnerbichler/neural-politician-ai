@@ -23,7 +23,7 @@ GRAPHS = {}
 SESSIONS = {}
 VOCAB = None  # type: SpeechSequence
 SEQUENCE_LEN = 15
-MIN_NUM_GENERATED = 100
+MIN_NUM_GENERATED = 250
 
 
 def init_models():
