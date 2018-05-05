@@ -118,6 +118,20 @@ def main():
 # noinspection PyBroadException
 def create_rnn(name, word_vectors, output_size, sequence_len, lstm_size, weights_file,
                learning_rate, dropout_rate):
+    """
+    Creates the graph of the applied neural net, whereas the first layer consists of
+    pre-trained word vectors. It inputs a sequence of word vectors and output a
+    probabiltiy distribution of the next word.
+    :param name: name of the model
+    :param word_vectors: pre-trained word vectors
+    :param output_size: number of neuron in the last layer
+    :param sequence_len: length of the input sequence
+    :param lstm_size: size of the underlying lstm cells
+    :param weights_file: path of file in which initial weights are read from
+    :param learning_rate: learnign rate of optimization algorithm
+    :param dropout_rate: rate of applied dropout
+    :return: created Keras model
+    """
     vocab_size = len(word_vectors)
 
     # prepare pre-trained word embeddings
@@ -156,6 +170,15 @@ def create_rnn(name, word_vectors, output_size, sequence_len, lstm_size, weights
 
 
 def train(model, dataset, checkpoint_file, epochs, embeddings_path):
+    """
+    Trains model with the given data set.
+    :param model: model to be trained
+    :param dataset: dataset to train with
+    :param checkpoint_file: path of file for storing weights
+    :param epochs: number of executed epochs
+    :param embeddings_path: Path of embeddings file, which is used to visualized word
+        vectors via Tensorboard
+    """
     # define the checkpoint
     logger.info('Storing weights in %s', checkpoint_file)
     checkpoint_cb = ModelCheckpoint(checkpoint_file, monitor='loss', verbose=1,
@@ -197,6 +220,13 @@ def train(model, dataset, checkpoint_file, epochs, embeddings_path):
 
 
 def sample_word(preds, temperature=1.0):
+    """
+    Samples a word (i.e. word id) from a given probability distribution after applying the
+    softmax function.
+    :param preds: distribution to sample from
+    :param temperature: temperature of the softmax function
+    :return: id of sampled word
+    """
     # helper function to sample an index from a probability array
     preds = np.asarray(preds).astype('float64')
     preds = np.log(preds) / temperature
@@ -209,6 +239,14 @@ def sample_word(preds, temperature=1.0):
 # noinspection PyUnusedLocal
 def epoch_end_prediction(epoch, logs, model, dataset):
     # type: (int, dict, Model, SpeechSequence) -> None
+    """
+    Generates a speech at the end of each epoch. Mainly for watching the progress during
+    training.
+    :param epoch: number of last epoch
+    :param logs: output of last epoch
+    :param model: trained model
+    :param dataset: dataset used for training
+    """
     # Function invoked at end of each epoch. Prints generated text.
 
     # start_index = np.random.randint(0, len(text) - SEQUENCE_LENGTH - 1)  # ToDo: enable
@@ -240,6 +278,11 @@ def epoch_end_prediction(epoch, logs, model, dataset):
 
 
 def create_tensorboard_embeddings(dataset):
+    """
+    Stores word vectors in the dataset in a separate text file, so it can be read by
+    Tensorboard.
+    :param dataset: dataset containing word vectors
+    """
     logger.debug('Creating embeddings file for Tensorboard...')
 
     # storing metadata for TensorBoard
