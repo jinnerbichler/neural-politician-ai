@@ -11,6 +11,7 @@ from keras import backend as K
 from keras.callbacks import TensorBoard, LambdaCallback, ModelCheckpoint
 from keras.layers import Embedding, LSTM, Dense, Dropout
 from keras.optimizers import Adam
+from keras.utils import plot_model
 from tensorflow.python.client import device_lib
 import tensorflow as tf
 import numpy as np
@@ -75,6 +76,9 @@ def main():
                        output_size=dataset.output_vocab_size, lstm_size=LSTM_SIZE,
                        sequence_len=SEQUENCE_LENGTH, weights_file=generic_model_file,
                        learning_rate=0.00001, dropout_rate=0.01)
+
+    plot_model(model, to_file='model.png', show_layer_names=True, show_shapes=True)
+
     model.summary()
 
     # train generic model
