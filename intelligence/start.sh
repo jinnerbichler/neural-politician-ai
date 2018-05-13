@@ -116,7 +116,6 @@ elif [ "$1" == "deploy" ]; then
         ./docker-compose.yml \
         ./Dockerfile \
         ./env \
-        char_rnn.py \
         word_rnn.py \
         speech_data.py \
         ${INSTANCE_NAME}:~/ --zone us-east1-d

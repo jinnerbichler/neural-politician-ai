@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import List
 
 import spacy
-import dropbox
 import feedparser
 import re
 import unicodedata
@@ -35,8 +34,8 @@ DROPBOX_SESSION_PATH = Path('/neural-politician') \
 
 PARLAMENT_BASE_URL = 'https://www.parlament.gv.at'
 POLITICIANS = ['kurz', 'kern', 'strache', 'strolz']
-SPEECHES_PICKLE = './data/speeches.pickle'
-VOCAB_VECTORS = './data/word_vectors.pickle'
+SPEECHES_FILE = './data/speeches.pickle'
+VOCAB_VECTORS_FILE = './data/word_vectors.pickle'
 DATASET_FILE = './data/dataset.pickle'
 
 PERIOD_FEEDS = {
@@ -102,7 +101,7 @@ def collect():
             logger.info('Current speech count: {}'.format(num_speeches))
 
         # store speeches
-        with open(SPEECHES_PICKLE, 'wb') as pickle_file:
+        with open(SPEECHES_FILE, 'wb') as pickle_file:
             pickle.dump(all_speeches, pickle_file)
 
         # convert to separate text file
@@ -177,7 +176,7 @@ def split():
     Loads pickleds speeches and splits them in to separate
     textfiles (i.e. on per politician).
     """
-    with open(SPEECHES_PICKLE, 'rb') as pickle_file:
+    with open(SPEECHES_FILE, 'rb') as pickle_file:
         speeches = pickle.load(pickle_file)
 
     for politician, speeches in speeches.items():
@@ -246,6 +245,8 @@ def read_speeches(politician):
             speech = speech.replace('ń', 'n')  # remove invalid derivative of c
             speech = speech.replace('š', 's')  # remove invalid derivative of s
             speech = speech.replace('ž', 'z')  # remove invalid derivative of z
+            speech = speech.replace('!', '.')
+            speech = speech.replace('?', '.')
             speech = re.sub(' +', ' ', speech)  # remove consecutive spaces
 
             single_speeches.append(speech)
@@ -305,24 +306,10 @@ def merge():
     return merged_speeches
 
 
-def db_upload(file_path):
-    # type: (Path) -> None
-    try:
-        dbx = dropbox.Dropbox(DROPBOX_TOKEN)
-        mode = dropbox.files.WriteMode.overwrite
-        db_path = str(DROPBOX_SESSION_PATH.joinpath(file_path))
-        with open(str(file_path), 'rb') as f:
-            data = f.read()
-        dbx.files_upload(data, db_path, mode, mute=False)
-        logger.info('Dropbox: Uploaded %s to %s', file_path, db_path)
-    except dropbox.exceptions.ApiError as err:
-        logger.error('Dropbox: API error', err)
-
-
 def extract_word_vectors(sentences, try_cached=True):
     # check if already extracted
-    if Path(VOCAB_VECTORS).exists() and try_cached:
-        with open(VOCAB_VECTORS, 'rb') as pickle_file:
+    if Path(VOCAB_VECTORS_FILE).exists() and try_cached:
+        with open(VOCAB_VECTORS_FILE, 'rb') as pickle_file:
             return pickle.load(pickle_file)
 
     # creating dictionary
@@ -358,10 +345,11 @@ def extract_word_vectors(sentences, try_cached=True):
         len(word_vectors), len(words_speeches) - len(word_vectors)))
 
     # store extracted vectors
-    with open(VOCAB_VECTORS, 'wb') as pickle_file:
+    with open(VOCAB_VECTORS_FILE, 'wb') as pickle_file:
         pickle.dump(word_vectors, pickle_file)
 
-    logger.info('Wrote {} word vectors to {}'.format(len(word_vectors), VOCAB_VECTORS))
+    logger.info(
+        'Wrote {} word vectors to {}'.format(len(word_vectors), VOCAB_VECTORS_FILE))
 
     return word_vectors
 
@@ -402,6 +390,7 @@ class SpeechSequence(Sequence):
         self.words_raw = [w.lower() for sent in sentences for w in sent.words]
 
         # build input vocabulary
+        logger.debug('Building input vocabulary...')
         self.word_vectors = word_vectors.copy()
         self.word_vectors[self.oov_token] = WordVector(word=self.oov_token,
                                                        id=len(word_vectors),
@@ -412,7 +401,7 @@ class SpeechSequence(Sequence):
         self.input_unk_id = len(word_vectors)
 
         # tokenize and build OUTPUT vocabulary
-        logger.debug('Building output vocablary...')
+        logger.debug('Building output vocabulary...')
         word_counts_raw = Counter(self.words_raw)
         most_com = word_counts_raw.most_common(output_size - 1)  # oov token will be added
         output_w = sorted([tup[0] for tup in most_com])
@@ -458,6 +447,15 @@ class SpeechSequence(Sequence):
 
         # encode words
         words = [w.lower() for sent in sentences for w in sent.words]
+
+        # filter single letter words
+        def map_words(word):
+            if len(word) == 1 and word not in ['.', ',']:
+                return self.oov_token
+            return word
+
+        words = list(map(map_words, words))
+
         logger.info('Adapting {} words'.format(len(words)))
         self.input_encoded = [self.input_vocab.get(w, self.input_unk_id)
                               for w in words]
@@ -540,11 +538,11 @@ if __name__ == '__main__':
     # merge()
 
     # extracts sentences and assign them to politicians
-    # sentences = extract_sentences(try_cached=True)
-    # word_vecs = extract_word_vectors(sentences)
+    sentences = extract_sentences(try_cached=True)
+    word_vecs = extract_word_vectors(sentences)
     #
     # dataset = SpeechSequence(sentences=sentences, output_size=5000, batch_size=50,
     #                          word_vectors=word_vecs, sequence_len=15, oov_token='<UNK>')
     # dataset.adapt(sentences=sentences)
 
-    convert_vocab()
+    # convert_vocab()

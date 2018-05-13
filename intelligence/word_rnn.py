@@ -18,8 +18,8 @@ import numpy as np
 np.random.seed(1)
 tf.set_random_seed(1)
 
-from intelligence.speech_data import SpeechSequence, Sentence
-import intelligence.speech_data as speech_data
+from speech_data import SpeechSequence, Sentence, extract_sentences, DATASET_FILE, \
+    extract_word_vectors, POLITICIANS
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logger = logging.getLogger('word_rnn')
@@ -29,7 +29,7 @@ TENSORBOARD_LOGS_DIR = os.getenv('TENSORBOARD_LOGS_DIR', './graph/')
 MODELS_DIR = os.getenv('MODELS_DIR', './models/')
 SEQUENCE_LENGTH = 15
 BATCH_SIZE = 128
-LSTM_SIZE = 1024
+LSTM_SIZE = 1024 + 512
 VOCAB_OUTPUT = 5000
 EMBEDDING_SIZE = 300  # fixed in pre-trained embeddings
 
@@ -37,9 +37,9 @@ LOCAL_DEBUG = os.getenv('LOCAL_DEBUG', 'false') == 'true'
 
 
 def main():
-    sentences = speech_data.extract_sentences(try_cached=True)  # type: List(Sentence)
+    sentences = extract_sentences(try_cached=True)  # type: List(Sentence)
 
-    speech_data_file = Path(speech_data.DATASET_FILE).absolute()
+    speech_data_file = Path(DATASET_FILE).absolute()
     # if LOCAL_DEBUG:
     #     global BATCH_SIZE
     #     global LSTM_SIZE
@@ -52,7 +52,7 @@ def main():
 
     # create dataset based on all sentences. Dataset is stored in separated pickle file
     # in order to ensure reproducable words IDs.
-    word_vectors = speech_data.extract_word_vectors(sentences=sentences, try_cached=True)
+    word_vectors = extract_word_vectors(sentences=sentences, try_cached=True)
     if speech_data_file.exists():
         logger.info('Loading dataset %s', speech_data_file)
         dataset = SpeechSequence.load(path=str(speech_data_file))
@@ -74,23 +74,27 @@ def main():
     model = create_rnn(name='generic', word_vectors=word_vectors,
                        output_size=dataset.output_vocab_size, lstm_size=LSTM_SIZE,
                        sequence_len=SEQUENCE_LENGTH, weights_file=generic_model_file,
-                       learning_rate=0.0001, dropout_rate=0.01)
+                       learning_rate=0.00001, dropout_rate=0.01)
     model.summary()
 
     # train generic model
-    logger.info('Training generic model with all sentences')
-    train(model=model, dataset=dataset, checkpoint_file=str(generic_model_file),
-          embeddings_path=embeddings_path, epochs=10)
+    # logger.info('Training generic model with all sentences')
+    # train(model=model, dataset=dataset, checkpoint_file=str(generic_model_file),
+    #       embeddings_path=embeddings_path, epochs=1)
 
     # train specific model for each politician
-    for politician in speech_data.POLITICIANS:
+    for politician in POLITICIANS:
         logger.info('Training model for %s', politician)
 
         # clear old TensorFlow session
         K.clear_session()
 
+        # get proper pretrained weights
+        weights_file = generic_model_file
         specific_model_file = Path(MODELS_DIR).joinpath('{}.h5'.format(politician))
         specific_model_file = specific_model_file.absolute()
+        if speech_data_file.exists():
+            weights_file = specific_model_file
 
         # filter sentences from specific politician
         filtered_sentences = [s for s in sentences if s.politician == politician]
@@ -106,13 +110,13 @@ def main():
         # create specific model
         model = create_rnn(name=politician, word_vectors=word_vectors,
                            output_size=dataset.output_vocab_size, lstm_size=LSTM_SIZE,
-                           sequence_len=SEQUENCE_LENGTH, weights_file=generic_model_file,
-                           learning_rate=0.00001, dropout_rate=0.0)
+                           sequence_len=SEQUENCE_LENGTH, weights_file=weights_file,
+                           learning_rate=0.000001, dropout_rate=0.0)
         model.summary()
 
         # train specific model
         train(model=model, dataset=dataset, checkpoint_file=str(specific_model_file),
-              embeddings_path=embeddings_path, epochs=20)
+              embeddings_path=embeddings_path, epochs=4)
 
 
 # noinspection PyBroadException
