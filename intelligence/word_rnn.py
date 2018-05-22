@@ -19,7 +19,7 @@ import numpy as np
 np.random.seed(1)
 tf.set_random_seed(1)
 
-from speech_data import SpeechSequence, Sentence, extract_sentences, DATASET_FILE, \
+from .speech_data import SpeechSequence, Sentence, extract_sentences, DATASET_FILE, \
     extract_word_vectors, POLITICIANS
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)

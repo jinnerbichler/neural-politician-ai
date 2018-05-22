@@ -53,6 +53,12 @@ def generate_speech(request):
     start_text = request.GET['start_text']
     logger.info('Generating speech for {}'.format(politician))
 
+    # set default for empty start text
+    if not start_text:
+        start_text = 'Sehr geehrter Herr Bundespräsident! Sehr geehrte Frau ' \
+                     'Präsidentin des Nationalrates! Sehr geehrte Vertreter des ' \
+                     'Hohen Hauses!'
+
     # pre-process input text
     for s in [',', '.', '!']:
         start_text = start_text.replace(s, ' ' + s)
