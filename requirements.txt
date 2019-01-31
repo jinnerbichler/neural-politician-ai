@@ -1,4 +1,4 @@
-django==2.0.4
+django==2.0.10
 tensorflow==1.7.0
 keras==2.1.5
 h5py==2.7.1
